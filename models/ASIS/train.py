@@ -14,7 +14,11 @@ sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 import provider
 import tf_util
+from misc import setup_wandb  
 from model import *
+from datetime import datetime
+import wandb
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
@@ -113,6 +117,17 @@ def get_trainable_variables():
 
 
 def train():
+
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")  # begining timestamp
+    run_name = "run_" + ts  # modified to a name that is easier to index
+    run_path = run_name
+    if not os.path.exists(run_path):
+        os.mkdir(run_path)
+    assert os.access(run_path, os.W_OK)
+
+    wandb.init(project="ASIS",  dir=run_path)
+    wandb.run.name = run_name
+
     with tf.Graph().as_default():
         with tf.device('/gpu:'+str(GPU_INDEX)):
             pointclouds_pl, labels_pl, sem_labels_pl = placeholder_inputs(BATCH_SIZE, NUM_POINT)
@@ -136,6 +151,7 @@ def train():
             tf.summary.scalar('l_var', l_var)
             tf.summary.scalar('l_dist', l_dist)
             tf.summary.scalar('l_reg', l_reg)
+            # wandb.log({'loss_train/loss': loss, 'loss_train/sem_loss': sem_loss, 'loss_train/disc_loss': disc_loss, 'loss_train/l_var':l_var,'loss_train/l_dist':l_dist,'loss_train/l_reg':l_reg})
 
             
             trainables = get_trainable_variables()
@@ -207,6 +223,7 @@ def train():
         for epoch in range(MAX_EPOCH):
             log_string('**** EPOCH %03d ****' % (epoch))
             sys.stdout.flush()
+            wandb.log({'epoch': epoch})
              
             train_one_epoch(sess, ops, train_writer)
             
@@ -246,12 +263,15 @@ def train_one_epoch(sess, ops, train_writer):
         
         if batch_idx % 50 == 0:
             log_string("loss: {:.2f}; sem_loss: {:.2f}; disc_loss: {:.2f}; l_var: {:.2f}; l_dist: {:.2f}; l_reg: {:.3f}.".format(loss_val, sem_loss_val, disc_loss_val, l_var_val, l_dist_val, l_reg_val))
+            wandb.log({'loss_val/loss': loss_val, 'loss_val/sem_loss': sem_loss_val, 'loss_val/disc_loss': disc_loss_val, 'loss_val/l_var':l_var_val,'loss_val/l_dist':l_dist_val,'loss_val/l_reg':l_reg_val})
     
     log_string('mean loss: %f' % (loss_sum / float(num_batches)))
+    wandb.log({'loss_val/mean': loss_sum / float(num_batches)})
 
 
 
 
 if __name__ == "__main__":
+    setup_wandb()
     train()
     LOG_FOUT.close()
